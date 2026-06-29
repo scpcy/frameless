@@ -1,3 +1,5 @@
+import org.typelevel.sbt.gha.{ Permissions, PermissionValue }
+
 val sparkVersion = "3.5.8"
 val spark40Version = "4.0.3"
 val spark34Version = "3.4.4"
@@ -340,6 +342,10 @@ lazy val sparkJava17Options: Seq[String] =
   } else Seq.empty
 
 lazy val framelessSettings = Seq(
+  // Publish to GitHub Packages (overrides TypelevelSonatypePlugin's project-scoped publishTo).
+  publishTo := Some(
+    "GitHub Packages".at("https://maven.pkg.github.com/scpcy/frameless")
+  ),
   scalacOptions ++= scalacOptionSettings.value,
   Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oDF"),
   libraryDependencies ++= Seq(
@@ -440,6 +446,39 @@ ThisBuild / developers := List(
 
 ThisBuild / tlCiReleaseBranches := Seq("master")
 ThisBuild / tlSitePublishBranch := Some("master")
+
+// --- Publish to GitHub Packages (private fork) instead of Sonatype/Maven Central ---
+// Artifacts keep the org.typelevel group id; GitHub Packages hosts every groupId
+// under a single per-repo Maven registry, so no coordinate change is required.
+// NB: publishTo is overridden per-project inside framelessSettings (below) because
+// TypelevelSonatypePlugin sets it at project scope, which shadows a ThisBuild value.
+//
+// In CI, GITHUB_REPOSITORY_OWNER/GITHUB_TOKEN are provided by Actions; the fallbacks
+// let `sbt publish` work locally if those env vars are exported by hand.
+ThisBuild / credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  sys.env.getOrElse("GITHUB_REPOSITORY_OWNER", "scpcy"),
+  sys.env.getOrElse("GITHUB_TOKEN", "")
+)
+
+// Replace the Sonatype release (tlCiRelease) with a plain cross-publish and drop the
+// PGP signing-key import steps — GitHub Packages does not require signed artifacts.
+ThisBuild / githubWorkflowPublishPreamble := Seq.empty
+ThisBuild / githubWorkflowPublish := Seq(
+  WorkflowStep.Sbt(
+    List("+publish"),
+    name = Some("Publish to GitHub Packages"),
+    env = Map("GITHUB_TOKEN" -> "${{ secrets.GITHUB_TOKEN }}")
+  )
+)
+// The default GITHUB_TOKEN needs packages:write to publish; contents:write is still
+// required by the existing site (gh-pages) and dependency-submission jobs.
+ThisBuild / githubWorkflowPermissions := Some(
+  Permissions.Specify.defaultRestrictive
+    .withContents(PermissionValue.Write)
+    .withPackages(PermissionValue.Write)
+)
 
 // Spark 3.x roots: 3.4 builds on 2.12 only, 3.5 builds on both 2.12 and 2.13.
 val spark3Roots = List("root-spark34", "root-spark35")
