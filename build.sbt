@@ -1,4 +1,4 @@
-import org.typelevel.sbt.gha.{ Permissions, PermissionValue }
+import org.typelevel.sbt.gha.{PermissionValue, Permissions}
 
 val sparkVersion = "3.5.8"
 val spark40Version = "4.0.3"
